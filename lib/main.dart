@@ -1,3 +1,10 @@
+import 'package:clothes_by_weather/cloth.dart';
+import 'package:clothes_by_weather/data/clothesTmp.dart';
+import 'package:clothes_by_weather/data/location.dart';
+import 'package:clothes_by_weather/data/preference.dart';
+import 'package:clothes_by_weather/data/util.dart';
+import 'package:clothes_by_weather/data/weatherApi.dart';
+import 'package:clothes_by_weather/location.dart';
 import 'package:flutter/material.dart';
 
 import 'data/weather.dart';
@@ -43,16 +50,10 @@ class _MyHomePageState extends State<MyHomePage> {
     "assets/img/sky4.png",
   ];
 
-  List<String> clothesTop = [
+  List<String> clothes = [
     "assets/img/jumper.png",
     "assets/img/long-sleeve.png",
     "assets/img/shirts.png",
-    "assets/img/short-sleeve.png",
-  ];
-
-  List<String> clothesBottom = [
-    "assets/img/pants.png",
-    "assets/img/skirts.png",
   ];
 
   List<String> status = [
@@ -62,19 +63,103 @@ class _MyHomePageState extends State<MyHomePage> {
     "우산 꼭 챙겨요~"
   ];
 
+  List<ClothesTmp> clothesTmp = [];
   List<Weather> weatherList = [];
+  Weather current;
+
+  LocationData locationData = LocationData(name : "강남구", x: 0, y: 0, lat: 37.498122, lng: 127.027565);
 
   int level = 0; //하늘 상태
+
+  void getWeather() async {
+    final api = WeatherApi();
+    Map<String, int> xy = Utils.latLngToXY(locationData.lat, locationData.lng);
+
+    final pref = Preference();
+    clothesTmp = await pref.getClothes();
+
+    final now = DateTime.now();
+    int checkTime = int.parse("${now.hour}10");
+    String setTime = "";
+    //데이터 업데이트 기준 시간
+    if(checkTime > 2300) {
+      setTime = "2300";
+    } else if(checkTime > 2000) {
+      setTime = "2000";
+    } else if(checkTime > 1700) {
+      setTime = "1700";
+    } else if(checkTime > 1400) {
+      setTime = "1400";
+    } else if(checkTime > 1100) {
+      setTime = "1100";
+    } else if(checkTime > 800) {
+      setTime = "0800";
+    } else if(checkTime > 500) {
+      setTime = "0500";
+    } else {
+      setTime = "0200";
+    }
+
+    weatherList = await api.getWeatherData(xy["nx"], xy["ny"], Utils.getFormatTime(DateTime.now()), setTime);
+
+    int time = int.parse("${now.hour}00");
+
+    // 지금 시간 이전의 예보 지우기
+    weatherList.removeWhere((w) => w.time < time);
+    current = weatherList.first;
+    clothes = clothesTmp.firstWhere((t) => t.tmp < current.tmp).clothes;
+    level = getLevel(current);
+    setState(() {});
+  }
+
+  int getLevel(Weather w) {
+    // 6~8 구름 많음
+    if(w.sky > 8) {
+      return 3;
+    } else if(w.sky > 5) {
+      return 2;
+    } else if(w.sky > 2) {
+      return 1;
+    }
+    return 0;
+  }
+
+  @override
+  void initState() {
+    // TODO: implement initState
+    super.initState();
+    getWeather();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        actions: [
+          IconButton(icon: Icon(Icons.category),
+              onPressed: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(builder: (ctx) => ClothPage())
+                );
+              }
+          )
+        ],
+      ),
       backgroundColor: colors[level],
-      body: getPage(),
+      body: weatherList.isEmpty? Container(child: Text("날씨 정보 불러오는 중..."),) : getPage(),
       floatingActionButton: FloatingActionButton(
-        child: Icon(Icons.add),
-        onPressed: (){
+        child: Icon(Icons.location_on),
+        onPressed: () async {
+          LocationData data = await Navigator.of(context).push(
+            MaterialPageRoute(builder: (ctx) => LocationPage())
+          );
 
+          if(data != null) {
+            locationData = data;
+            getWeather();
+          }
         },
       ), // This trailing comma makes auto-formatting nicer for build methods.
     );
@@ -85,8 +170,7 @@ class _MyHomePageState extends State<MyHomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(height: 60),
-          Text("금천구",
+          Text("${locationData.name}",
             textAlign: TextAlign.center,
             style: TextStyle(color : Colors.white, fontSize: 20),
           ),
@@ -100,12 +184,12 @@ class _MyHomePageState extends State<MyHomePage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              Text("26°C",
+              Text("${current.tmp}°C",
                 style: TextStyle(color : Colors.white, fontSize: 28),
               ),
               Column(
                 children: [
-                  Text("",
+                  Text("${Utils.stringToDateTime(current.date).month}월 ${Utils.stringToDateTime(current.date).day}일",
                     style: TextStyle(color : Colors.white, fontSize: 14),
                   ),
                   Text(status[level],
@@ -123,41 +207,50 @@ class _MyHomePageState extends State<MyHomePage> {
           Container(height: 30),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: List.generate(clothesTop.length, (idx) {
+            children: List.generate(clothes.length, (idx) {
               return Expanded(child: Container(
                 padding: EdgeInsets.all(8),
                 width: 100,
                 height: 100,
-                child: Image.asset(clothesTop[idx], fit: BoxFit.contain,),
+                child: Image.asset(clothes[idx], fit: BoxFit.contain,),
               ));
             }),
           ),
           Container(height: 30),
-          Container(
-            height: 150,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: List.generate(
-                weatherList.length,
-                (idx) {
-                  return Container(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Text("온도", style: TextStyle(color : Colors.white, fontSize: 10)),
-                        Text("강수확률", style: TextStyle(color : Colors.white, fontSize: 10)),
-                        Container(
-                          width : 50,
-                          height : 50,
-                        ),
-                        Text("0800", style: TextStyle(color : Colors.white, fontSize: 10))
-                      ],
-                    ),
-                  );
-                }
-              ),
+          Expanded(
+            child: Container(
+              height: 150,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: List.generate(
+                  weatherList.length,
+                  (idx) {
+                    final w = weatherList[idx];
+                    int _level = getLevel(w);
+
+                    return Container(
+                      margin: EdgeInsets.symmetric(horizontal: 8),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Text("${w.tmp}°C", style: TextStyle(color : Colors.white, fontSize: 12)),
+                          Text("${w.pop}%", style: TextStyle(color : Colors.white, fontSize: 12)),
+                          Container(
+                            width : 50,
+                            height : 50,
+                            child: Image.asset(sky[_level]),
+                          ),
+                          Text("${w.time.toString().substring(0,2)}시", style: TextStyle(color : Colors.white, fontSize: 14))
+                        ],
+                      ),
+                    );
+                  }
+                ),
+              )
             )
           ),
+          Container(height: 80),
         ],
       ),
     );
